@@ -269,6 +269,14 @@ button:disabled {
   line-height: 1;
 }
 
+.caricature-photo {
+  width: 144px;
+  height: 144px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #1a1a22;
+}
+
 .caricature-label {
   margin-top: 8px;
   font-size: 13px;
@@ -371,4 +379,90 @@ button:disabled {
 .locked-sub {
   font-size: 12px;
   color: #8a8a95;
+}
+
+.extract {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+.extract header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #15151a;
+  border-bottom: 1px solid #26262e;
+}
+.extract header h1 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.extract-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  min-height: 0;
+}
+.extract-drop {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: #000;
+  overflow: auto;
+}
+.extract-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+.extract-pick {
+  position: absolute;
+  inset: 24px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed #26262e;
+  border-radius: 12px;
+  color: #8a8a95;
+  cursor: pointer;
+  font-size: 14px;
+}
+.extract-pick:hover {
+  border-color: #ff6b35;
+  color: #f5f5f7;
+}
+.extract-panel {
+  background: #101015;
+  border-left: 1px solid #26262e;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+.extract-panel h2 {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a8a95;
+}
+.extract-keys {
+  width: 100%;
+  background: #0a0a0c;
+  color: #f5f5f7;
+  border: 1px solid #26262e;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+.extract-snippet {
+  background: #0a0a0c;
+  border: 1px solid #26262e;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #c5c5cf;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 50vh;
 }

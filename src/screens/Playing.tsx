@@ -191,9 +191,13 @@ function Round({
 
         <div className="panel">
           <div className="caricature">
-            <div className="caricature-emoji" aria-label={c.label}>
-              {c.emoji}
-            </div>
+            {c.photo ? (
+              <img className="caricature-photo" src={c.photo} alt={c.label} />
+            ) : (
+              <div className="caricature-emoji" aria-label={c.label}>
+                {c.emoji}
+              </div>
+            )}
             <div className="caricature-label">{c.label}</div>
             <div className="caricature-nav">
               <button className="btn-ghost" onClick={onPrev} aria-label="Previous face">
