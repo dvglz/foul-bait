@@ -15,7 +15,7 @@ export function Intro({ onStart, faceCount }: Props) {
   return (
     <div className="intro">
       <div className="intro-inner">
-        <h1 className="intro-hero">Are you MVP material?</h1>
+        <h1 className="intro-hero">CAN YOU SELL IT LIKE MVP?</h1>
         <video
           className="intro-loop"
           src="/intro-loop.mp4"
@@ -26,10 +26,10 @@ export function Intro({ onStart, faceCount }: Props) {
           poster="/faces/Frame9.jpg"
         />
         <p className="intro-tagline">
-          Mimic {faceCount} iconic foul-bait faces. Fastest clear wins.
+          The whistle won't blow itself. Earn it {faceCount} times. Certified MVP face by the end.
         </p>
         <button className="intro-cta" onClick={start}>
-          START
+          EARN THE WHISTLE
         </button>
         <p className="intro-tip">Pro tip: screen-record this 🎥</p>
         <p className="intro-foot">Front camera required · No data stored</p>
