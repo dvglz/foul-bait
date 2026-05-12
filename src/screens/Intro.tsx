@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { unlockAudio, preloadWhistle } from '../audio/whistle';
+import { track } from '../analytics/track';
 
 type Props = {
   onStart: () => void;
@@ -6,7 +8,12 @@ type Props = {
 };
 
 export function Intro({ onStart, faceCount }: Props) {
+  useEffect(() => {
+    track('intro_view', { face_count: faceCount });
+  }, [faceCount]);
+
   const start = () => {
+    track('start_click', { face_count: faceCount });
     unlockAudio();
     void preloadWhistle();
     onStart();

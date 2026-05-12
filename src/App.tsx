@@ -6,6 +6,7 @@ import { Intro } from './screens/Intro';
 import { Results } from './screens/Results';
 import { PLACEHOLDER_CARICATURES } from './game/caricatures';
 import type { RunResult } from './game/run';
+import { track } from './analytics/track';
 
 const ExtractPage = import.meta.env.DEV
   ? lazy(() => import('./dev/ExtractPage').then((m) => ({ default: m.ExtractPage })))
@@ -66,6 +67,12 @@ export function App() {
           holdMs={holdMs}
           debug={debug}
           onComplete={(r) => {
+            const cleanCount = r.rounds.filter((rd) => !rd.missed).length;
+            track('run_complete', {
+              total_ms: Math.round(r.totalMs),
+              clean_count: cleanCount,
+              total_count: r.rounds.length,
+            });
             setResult(r);
             setPhase('results');
           }}
@@ -75,6 +82,7 @@ export function App() {
         <Results
           result={result}
           onPlayAgain={() => {
+            track('play_again');
             setResult(null);
             setPhase('playing');
           }}

@@ -4,6 +4,7 @@ import type { RunResult } from '../game/run';
 import { getFrame } from '../capture/whistleFrameStore';
 import { renderGrid, type GridTile } from '../capture/gridRenderer';
 import { formatTime, shareRun } from '../share/share';
+import { track } from '../analytics/track';
 
 const CLUTCH_PLAY_URL = 'https://play.clutchpoints.com/?src=mvp-material';
 
@@ -36,6 +37,11 @@ export function Results({ result, onPlayAgain }: Props) {
   );
 
   const onShare = async () => {
+    track('share_click', {
+      total_ms: Math.round(result.totalMs),
+      clean_count: cleanCount,
+      total_count: totalCount,
+    });
     setShareState('rendering');
     try {
       const blob = await renderGrid({
@@ -50,9 +56,11 @@ export function Results({ result, onPlayAgain }: Props) {
         timeMs: result.totalMs,
       });
       setShareState(status);
+      track('share_result', { status });
     } catch (e) {
       console.error(e);
       setShareState('error');
+      track('share_result', { status: 'error' });
     }
   };
 
@@ -116,7 +124,12 @@ export function Results({ result, onPlayAgain }: Props) {
           style={{ animationDelay: `${240 + tiles.length * 70 + 200}ms` }}
         >
           More Games at{' '}
-          <a href={CLUTCH_PLAY_URL} target="_blank" rel="noopener noreferrer">
+          <a
+            href={CLUTCH_PLAY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => track('clutchplay_click')}
+          >
             Clutch Play →
           </a>
         </p>

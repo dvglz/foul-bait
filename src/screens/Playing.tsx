@@ -7,6 +7,7 @@ import { pickHint } from '../game/hintCopy';
 import { captureFrame, clearFrames } from '../capture/whistleFrameStore';
 import type { RoundResult, RunResult } from '../game/run';
 import { formatTime } from '../share/share';
+import { track } from '../analytics/track';
 
 const DEFAULT_CAP_MS = 20000;
 
@@ -77,6 +78,12 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
       const round: RoundResult = { caricatureId: c.id, timeMs: elapsed, missed };
       const nextResults = [...results, round];
       setResults(nextResults);
+      track('round_complete', {
+        caricature_id: c.id,
+        round_index: index,
+        time_ms: Math.round(elapsed),
+        missed,
+      });
       if (index + 1 >= total) {
         const start = runStart ?? performance.now();
         const totalMs = performance.now() - start;
@@ -104,6 +111,7 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
         setRunStart(t0);
         roundStartRef.current = t0;
         sinceBelowRef.current = t0;
+        track('run_start', { face_count: total });
       }
       const live = blendshapesToMap(bs);
       const s = scoreMatch(live, c);
@@ -142,6 +150,18 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
 
   const { status, error, fps, landmarks } = useFaceLandmarker(videoRef, { onFrame });
   void landmarks;
+
+  // Fire camera outcome once per session
+  const cameraOutcomeRef = useRef<'granted' | 'error' | null>(null);
+  useEffect(() => {
+    if (status === 'running' && cameraOutcomeRef.current !== 'granted') {
+      cameraOutcomeRef.current = 'granted';
+      track('camera_granted');
+    } else if (status === 'error' && cameraOutcomeRef.current !== 'error') {
+      cameraOutcomeRef.current = 'error';
+      track('camera_error', { message: error ?? 'unknown' });
+    }
+  }, [status, error]);
 
   const elapsedRound = runStart == null ? 0 : now - roundStartRef.current;
   const ringPct = Math.max(0, Math.min(1, 1 - elapsedRound / capMs));
