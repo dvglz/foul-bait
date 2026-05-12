@@ -3,8 +3,23 @@ import { getFaceLandmarker, extractBlendshapes, type Blendshape } from './faceLa
 
 type Status = 'idle' | 'loading-model' | 'requesting-camera' | 'running' | 'error';
 
+let cachedStream: MediaStream | null = null;
+async function getStream(): Promise<MediaStream> {
+  if (cachedStream && cachedStream.getVideoTracks().some((t) => t.readyState === 'live')) {
+    return cachedStream;
+  }
+  cachedStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+    audio: false,
+  });
+  return cachedStream;
+}
+
+type Point = { x: number; y: number };
+
 type Options = {
   onFrame?: (bs: Blendshape[], video: HTMLVideoElement) => void;
+  onLandmarks?: (pts: Point[]) => void;
 };
 
 export function useFaceLandmarker(
@@ -14,21 +29,22 @@ export function useFaceLandmarker(
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
   const [blendshapes, setBlendshapes] = useState<Blendshape[]>([]);
+  const [landmarks, setLandmarks] = useState<Point[]>([]);
   const [fps, setFps] = useState(0);
   const rafRef = useRef<number | null>(null);
   const lastVideoTimeRef = useRef(-1);
   const frameTimesRef = useRef<number[]>([]);
   const onFrameRef = useRef(options.onFrame);
+  const onLandmarksRef = useRef(options.onLandmarks);
   onFrameRef.current = options.onFrame;
+  onLandmarksRef.current = options.onLandmarks;
 
   useEffect(() => {
     let cancelled = false;
-    let stream: MediaStream | null = null;
 
     (async () => {
       try {
         setStatus('loading-model');
-        console.log('[face] loading model');
         const landmarker = await Promise.race([
           getFaceLandmarker(),
           new Promise<never>((_, reject) =>
@@ -36,7 +52,7 @@ export function useFaceLandmarker(
               () =>
                 reject(
                   new Error(
-                    "Model load timed out. On iOS, make sure you're on Safari 16+ and have a stable connection.",
+                    'The refs are stuck in traffic. Refresh in a sec.',
                   ),
                 ),
               25000,
@@ -45,17 +61,13 @@ export function useFaceLandmarker(
         ]);
         if (cancelled) return;
 
-        console.log('[face] model loaded, requesting camera');
         setStatus('requesting-camera');
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error(
             'Camera not available. iOS Safari requires HTTPS — open this page via the https:// URL.',
           );
         }
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false,
-        });
+        const stream = await getStream();
         if (cancelled) return;
 
         const video = videoRef.current;
@@ -66,7 +78,6 @@ export function useFaceLandmarker(
         } catch (playErr) {
           console.warn('[face] video.play() rejected:', playErr);
         }
-        console.log('[face] video playing, dims', video.videoWidth, video.videoHeight);
 
         setStatus('running');
 
@@ -77,9 +88,14 @@ export function useFaceLandmarker(
             lastVideoTimeRef.current = v.currentTime;
             const result = landmarker.detectForVideo(v, performance.now());
             const bs = extractBlendshapes(result);
+            const pts = result.faceLandmarks?.[0] ?? [];
             if (bs.length) {
               setBlendshapes(bs);
               onFrameRef.current?.(bs, v);
+            }
+            if (pts.length) {
+              setLandmarks(pts);
+              onLandmarksRef.current?.(pts);
             }
 
             const now = performance.now();
@@ -102,9 +118,10 @@ export function useFaceLandmarker(
     return () => {
       cancelled = true;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-      if (stream) stream.getTracks().forEach((t) => t.stop());
+      // Intentionally NOT stopping the stream — we cache it across remounts
+      // so "Play again" doesn't re-prompt the user (esp. iOS Safari).
     };
   }, [videoRef]);
 
-  return { status, error, blendshapes, fps };
+  return { status, error, blendshapes, landmarks, fps };
 }

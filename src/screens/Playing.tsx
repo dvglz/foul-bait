@@ -2,239 +2,271 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFaceLandmarker } from '../face/useFaceLandmarker';
 import { PLACEHOLDER_CARICATURES, type Caricature } from '../game/caricatures';
 import { blendshapesToMap, scoreMatch, updateHold, type HoldState } from '../game/matcher';
-import { playWhistle, preloadWhistle, unlockAudio } from '../audio/whistle';
+import { playWhistle } from '../audio/whistle';
+import { pickHint } from '../game/hintCopy';
+import { captureFrame, clearFrames } from '../capture/whistleFrameStore';
+import type { RoundResult, RunResult } from '../game/run';
+import { formatTime } from '../share/share';
+
+const DEFAULT_CAP_MS = 20000;
 
 type Props = {
   threshold: number;
   holdMs: number;
+  debug: boolean;
+  onComplete: (result: RunResult) => void;
 };
 
-export function Playing({ threshold, holdMs }: Props) {
+export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [started, setStarted] = useState(false);
   const [index, setIndex] = useState(0);
-  const next = useCallback(
-    () => setIndex((i) => (i + 1) % PLACEHOLDER_CARICATURES.length),
-    [],
-  );
-  const prev = useCallback(
-    () =>
-      setIndex((i) => (i - 1 + PLACEHOLDER_CARICATURES.length) % PLACEHOLDER_CARICATURES.length),
-    [],
-  );
-
-  if (!started) {
-    return (
-      <div className="center">
-        <div>
-          <h1 style={{ marginTop: 0 }}>Foul Bait</h1>
-          <p style={{ maxWidth: 360, color: '#a0a0aa' }}>
-            Mimic the face on screen. Hold the expression until the meter locks and the whistle
-            blows.
-          </p>
-          <button
-            onClick={() => {
-              unlockAudio();
-              void preloadWhistle();
-              setStarted(true);
-            }}
-          >
-            Start camera
-          </button>
-          <p style={{ fontSize: 12, color: '#666', marginTop: 16 }}>
-            threshold {threshold.toFixed(2)} · hold {holdMs}ms ·{' '}
-            {PLACEHOLDER_CARICATURES.length} faces
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const c = PLACEHOLDER_CARICATURES[index];
-  return (
-    <Round
-      videoRef={videoRef}
-      caricature={c}
-      threshold={threshold}
-      holdMs={holdMs}
-      indexLabel={`${index + 1} / ${PLACEHOLDER_CARICATURES.length}`}
-      onNext={next}
-      onPrev={prev}
-    />
-  );
-}
-
-function Round({
-  videoRef,
-  caricature: c,
-  threshold,
-  holdMs,
-  indexLabel,
-  onNext,
-  onPrev,
-}: {
-  videoRef: React.RefObject<HTMLVideoElement | null>;
-  caricature: Caricature;
-  threshold: number;
-  holdMs: number;
-  indexLabel: string;
-  onNext: () => void;
-  onPrev: () => void;
-}) {
+  const [results, setResults] = useState<RoundResult[]>([]);
+  const [runStart, setRunStart] = useState<number | null>(null);
+  const [now, setNow] = useState(() => performance.now());
   const [score, setScore] = useState(0);
-  const [peak, setPeak] = useState(0);
   const [locked, setLocked] = useState(false);
-  const [liveTarget, setLiveTarget] = useState<Record<string, number>>({});
-  const holdRef = useRef<HoldState>({ aboveSince: null, locked: false });
-  const peakRef = useRef(0);
+  const [liveMap, setLiveMap] = useState<Record<string, number>>({});
+  const [face, setFace] = useState<{ x: number; y: number } | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
 
+  const holdRef = useRef<HoldState>({ aboveSince: null, locked: false });
+  const roundStartRef = useRef<number>(performance.now());
+  const sinceBelowRef = useRef<number>(performance.now());
+  const lastHintRef = useRef<string | null>(null);
+
+  const c: Caricature = PLACEHOLDER_CARICATURES[index];
+  const total = PLACEHOLDER_CARICATURES.length;
+  const capMs = c.capMs ?? DEFAULT_CAP_MS;
+
+  // Reset for each round
   useEffect(() => {
     setScore(0);
-    setPeak(0);
     setLocked(false);
-    setLiveTarget({});
+    setLiveMap({});
+    setHint(null);
     holdRef.current = { aboveSince: null, locked: false };
-    peakRef.current = 0;
-  }, [c.id]);
+    roundStartRef.current = performance.now();
+    sinceBelowRef.current = performance.now();
+    lastHintRef.current = null;
+  }, [index]);
 
-  const debugKeys = useMemo(() => {
-    const w = c.weights ?? {};
-    return Object.keys(c.target)
-      .sort((a, b) => (w[b] ?? 1) - (w[a] ?? 1))
-      .slice(0, 4);
-  }, [c]);
+  // Cleanup any stale captures from a prior session on mount
+  useEffect(() => {
+    clearFrames();
+  }, []);
+
+  // Tick for timer + countdown ring
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      setNow(performance.now());
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const advance = useCallback(
+    (missed: boolean) => {
+      // For locks we already captured at the whistle moment in onFrame; don't
+      // overwrite with a later (post-burst) frame. For misses, capture now.
+      if (missed) {
+        const v = videoRef.current;
+        if (v) captureFrame(c.id, v, true);
+      }
+      const elapsed = performance.now() - roundStartRef.current;
+      const round: RoundResult = { caricatureId: c.id, timeMs: elapsed, missed };
+      const nextResults = [...results, round];
+      setResults(nextResults);
+      if (index + 1 >= total) {
+        const start = runStart ?? performance.now();
+        const totalMs = performance.now() - start;
+        onComplete({ totalMs, rounds: nextResults });
+      } else {
+        setIndex(index + 1);
+      }
+    },
+    [c.id, index, total, results, runStart, onComplete],
+  );
+
+  // Per-face cap watchdog (only after the run actually started)
+  useEffect(() => {
+    if (runStart == null) return;
+    const elapsed = now - roundStartRef.current;
+    if (!locked && elapsed >= capMs) {
+      advance(true);
+    }
+  }, [now, capMs, locked, advance, runStart]);
 
   const onFrame = useCallback(
-    (bs: import('../face/faceLandmarker').Blendshape[]) => {
+    (bs: import('../face/faceLandmarker').Blendshape[], video: HTMLVideoElement) => {
+      if (runStart == null) {
+        const t0 = performance.now();
+        setRunStart(t0);
+        roundStartRef.current = t0;
+        sinceBelowRef.current = t0;
+      }
       const live = blendshapesToMap(bs);
       const s = scoreMatch(live, c);
       setScore(s);
-      if (s > peakRef.current) {
-        peakRef.current = s;
-        setPeak(s);
-      }
-      const liveSubset: Record<string, number> = {};
-      for (const k of debugKeys) liveSubset[k] = live[k] ?? 0;
-      setLiveTarget(liveSubset);
-      const updated = updateHold(holdRef.current, s, threshold, holdMs, performance.now());
+      setLiveMap(live);
+      const t = performance.now();
+      const updated = updateHold(holdRef.current, s, threshold, holdMs, t);
       const justLocked = !holdRef.current.locked && updated.locked;
       holdRef.current = updated;
-      if (justLocked) {
+      if (s >= threshold) {
+        sinceBelowRef.current = t;
+      }
+      if (justLocked && !locked) {
         setLocked(true);
         playWhistle();
+        captureFrame(c.id, video, false);
+        setTimeout(() => advance(false), 250);
+      }
+      // Hint: refresh only when top gap key changes, after 3s below threshold
+      const belowFor = t - sinceBelowRef.current;
+      if (s < threshold && belowFor > 3000) {
+        const next = pickHint(c.target, live);
+        if (next !== lastHintRef.current) {
+          lastHintRef.current = next;
+          setHint(next);
+        }
+      } else {
+        if (lastHintRef.current !== null) {
+          lastHintRef.current = null;
+          setHint(null);
+        }
       }
     },
-    [c, threshold, holdMs, debugKeys],
+    [c, threshold, holdMs, locked, advance, runStart],
   );
 
-  const { status, error, fps } = useFaceLandmarker(videoRef, { onFrame });
+  const onLandmarks = useCallback((points: { x: number; y: number }[]) => {
+    if (!points.length) return;
+    // Use ~landmark 1 (nose) as face center
+    const p = points[1] ?? points[0];
+    setFace({ x: p.x, y: p.y });
+  }, []);
 
-  useEffect(() => {
-    if (!locked) return;
-    const t = setTimeout(onNext, 900);
-    return () => clearTimeout(t);
-  }, [locked, onNext]);
+  const { status, error, fps, landmarks } = useFaceLandmarker(videoRef, { onFrame, onLandmarks });
+  void landmarks;
+
+  // Choose target-badge corner: opposite quadrant of detected face (mirrored).
+  const badgeCorner = useMemo<'tl' | 'tr' | 'bl' | 'br'>(() => {
+    if (!face) return 'tl';
+    // video is mirrored horizontally on screen, so mirror x for badge layout.
+    const xv = 1 - face.x;
+    const right = xv < 0.5;
+    const bottom = face.y < 0.5;
+    if (right && bottom) return 'br';
+    if (right && !bottom) return 'tr';
+    if (!right && bottom) return 'bl';
+    return 'tl';
+  }, [face]);
+
+  const elapsedRound = runStart == null ? 0 : now - roundStartRef.current;
+  const ringPct = Math.max(0, Math.min(1, 1 - elapsedRound / capMs));
+  const totalElapsed = runStart == null ? 0 : now - runStart;
 
   const meterPct = Math.round(score * 100);
-  const peakPct = Math.round(peak * 100);
   const thresholdPct = Math.round(threshold * 100);
+  const ringDeg = Math.round(ringPct * 360);
+  const ringColor = ringPct < 0.2 ? '#ff3b3b' : ringPct < 0.4 ? '#ffaa33' : '#06d6a0';
+
+  const showHint = hint && !locked;
+  const debugLm = debug ? landmarks ?? [] : [];
 
   return (
-    <div className="spike">
-      <header>
-        <h1>Foul Bait</h1>
-        <span style={{ fontSize: 12, color: '#a0a0aa' }}>
-          face {indexLabel} · {status} · {fps} fps
-        </span>
-      </header>
-      <div className="stage">
-        <div className="video-wrap">
-          <video ref={videoRef} playsInline muted />
-          {status !== 'running' && !error && (
-            <div className="overlay">
-              <div className="overlay-spinner" />
-              <div className="overlay-msg">
-                {status === 'loading-model'
-                  ? 'Loading face model…'
-                  : status === 'requesting-camera'
-                  ? 'Allow camera access in the prompt'
-                  : status === 'idle'
-                  ? 'Starting…'
-                  : status}
-              </div>
-            </div>
-          )}
-          {error && (
-            <div className="overlay overlay--error">
-              <div className="overlay-msg">Couldn't start the camera</div>
-              <div className="overlay-detail">{error}</div>
-            </div>
-          )}
-          {status === 'running' && debugKeys.length > 0 && (
-            <div className="debug-overlay">
-              {debugKeys.map((k) => {
-                const live = liveTarget[k] ?? 0;
-                const target = c.target[k];
-                const hit = live >= target;
-                return (
-                  <div key={k} className={`debug-row ${hit ? 'debug-row--hit' : ''}`}>
-                    <span className="debug-name">{k}</span>
-                    <span className="debug-val">
-                      {live.toFixed(2)} / {target.toFixed(2)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+    <div className="round">
+      <video ref={videoRef} className="round-video" playsInline muted />
+
+      {status !== 'running' && !error && (
+        <div className="overlay">
+          <div className="overlay-spinner" />
+          <div className="overlay-msg">
+            {status === 'loading-model'
+              ? 'The refs are checking the tape...'
+              : status === 'requesting-camera'
+              ? 'Allow camera in the prompt'
+              : 'Starting...'}
+          </div>
         </div>
+      )}
+      {error && (
+        <div className="overlay overlay--error">
+          <div className="overlay-msg">No camera, no whistle.</div>
+          <div className="overlay-detail">{error}</div>
+        </div>
+      )}
 
-        <div className="panel">
-          <div className="caricature">
+      {debug && debugLm.length > 0 && <DebugLandmarks points={debugLm} />}
+
+      <div className="round-top">
+        <div className="round-strip">
+          {PLACEHOLDER_CARICATURES.map((cc, i) => {
+            const r = results.find((rr) => rr.caricatureId === cc.id);
+            const state =
+              i < index ? (r?.missed ? 'missed' : 'done') : i === index ? 'current' : 'upcoming';
+            return <span key={cc.id} className={`round-dot round-dot--${state}`} />;
+          })}
+        </div>
+        <div className="round-timer">{formatTime(totalElapsed)}</div>
+      </div>
+
+      <div className={`round-badge round-badge--${badgeCorner} ${locked ? 'round-badge--burst' : ''}`}>
+        <div
+          className="round-badge-ring"
+          style={{
+            background: `conic-gradient(${ringColor} ${ringDeg}deg, rgba(255,255,255,0.12) ${ringDeg}deg)`,
+          }}
+        >
+          <div className="round-badge-inner">
             {c.photo ? (
-              <img className="caricature-photo" src={c.photo} alt={c.label} />
+              <img src={c.photo} alt={c.label} className="round-badge-photo" />
             ) : (
-              <div className="caricature-emoji" aria-label={c.label}>
-                {c.emoji}
-              </div>
+              <div className="round-badge-emoji">{c.emoji}</div>
             )}
-            <div className="caricature-label">{c.label}</div>
-            <div className="caricature-nav">
-              <button className="btn-ghost" onClick={onPrev} aria-label="Previous face">
-                ←
-              </button>
-              <button className="btn-ghost" onClick={onNext} aria-label="Next face">
-                →
-              </button>
-            </div>
           </div>
-
-          <div className="meter">
-            <div
-              className={`meter-fill ${score >= threshold ? 'meter-fill--hot' : ''}`}
-              style={{ width: `${meterPct}%` }}
-            />
-            <div className="meter-peak" style={{ left: `${peakPct}%` }} />
-            <div className="meter-threshold" style={{ left: `${thresholdPct}%` }} />
-          </div>
-          <div className="meter-readout">
-            <span>match {meterPct}%</span>
-            <span>peak {peakPct}%</span>
-            <span>need ≥ {thresholdPct}%</span>
-          </div>
-
-          {locked ? (
-            <div className="locked">
-              <span className="locked-title">WHISTLE!</span>
-              <span className="locked-sub">advancing…</span>
-            </div>
-          ) : (
-            <div className="hint">
-              Hold the face for {holdMs}ms once the bar passes the line.
-            </div>
-          )}
         </div>
       </div>
+
+      {showHint && <div className="round-hint">{hint}</div>}
+
+      <div className="round-meter-wrap">
+        <div className="round-meter-labels">
+          <span>Match {meterPct}%</span>
+          <span className="round-meter-labels-right">
+            Whistle <span aria-hidden>📣</span>
+          </span>
+        </div>
+        <div className="round-meter">
+          <div
+            className={`round-meter-fill ${score >= threshold ? 'round-meter-fill--hot' : ''}`}
+            style={{ width: `${meterPct}%` }}
+          />
+          <div className="round-meter-threshold" style={{ left: `${thresholdPct}%` }} />
+        </div>
+      </div>
+
+      {debug && (
+        <div className="round-debug">
+          {fps} fps · {Object.keys(c.target).length} keys · score {meterPct}%
+          <br />
+          {Object.entries(c.target)
+            .map(([k, t]) => `${k}: ${(liveMap[k] ?? 0).toFixed(2)}/${t.toFixed(2)}`)
+            .join('  ')}
+        </div>
+      )}
     </div>
+  );
+}
+
+function DebugLandmarks({ points }: { points: { x: number; y: number }[] }) {
+  return (
+    <svg className="round-landmarks" viewBox="0 0 1 1" preserveAspectRatio="none">
+      {points.map((p, i) => (
+        <circle key={i} cx={1 - p.x} cy={p.y} r={0.0025} fill="#06d6a0" />
+      ))}
+    </svg>
   );
 }

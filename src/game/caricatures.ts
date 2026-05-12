@@ -13,6 +13,8 @@ export type Caricature = {
   target: Record<string, number>;
   weights?: Record<string, number>;
   threshold?: number;
+  /** Soft cap per face in ms; default 20000. On expiry, advance with a miss. */
+  capMs?: number;
 };
 
 type RawCaricature = Omit<Caricature, 'target'> & { target?: Record<string, number> };
