@@ -15,72 +15,104 @@ export type GridInput = {
   totalCount: number;
 };
 
+// 9:16 share card matching Figma node 69:1169
+const W = 1080;
+const H = 1920;
+const BG = '#141414';
+const ORANGE = '#f4900c';
+const WHITE = '#ffffff';
+const EMPTY_BG = 'rgba(255,255,255,0.06)';
+const FONT_EXPANDED = "'Special Gothic Expanded One', 'Special Gothic', system-ui, sans-serif";
+const FONT_GOTHIC = "'Special Gothic', system-ui, sans-serif";
+
+// Grid metrics (scaled directly from Figma 1080-wide frame)
+const TILE = 220;
+const PAIR_GAP = 13; // gap between caricature and player within a pair
+const COL_GAP = 21; // gap between pair-columns
+const ROW_GAP = 21; // gap between rows
+const TILE_RADIUS = 51;
+
 export async function renderGrid(input: GridInput): Promise<Blob> {
   const { tiles, timeMs, cleanCount, totalCount } = input;
-  const cols = 2;
-  const rows = Math.ceil(tiles.length / cols);
-  const W = 1080;
-  const cellGap = 16;
-  const headerH = 200;
-  const footerH = 90;
-  const cellW = (W - cellGap * (cols + 1)) / cols;
-  const cellH = cellW; // each tile is square; target on top half, player on bottom
-  const gridH = headerH + rows * (cellH + cellGap) + cellGap + footerH;
+
   const canvas = document.createElement('canvas');
   canvas.width = W;
-  canvas.height = gridH;
+  canvas.height = H;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('No 2D context');
 
   // background
-  const bg = ctx.createLinearGradient(0, 0, 0, gridH);
-  bg.addColorStop(0, '#15151a');
-  bg.addColorStop(1, '#0a0a0c');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, gridH);
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
 
-  // header
-  ctx.fillStyle = '#ff6b35';
-  ctx.font = '700 64px -apple-system, BlinkMacSystemFont, sans-serif';
+  // Header: "CAN YOU SELL IT / LIKE AN MVP?"
+  ctx.fillStyle = WHITE;
   ctx.textAlign = 'center';
-  ctx.fillText('FOUL BAIT', W / 2, 80);
-  ctx.fillStyle = '#f5f5f7';
-  ctx.font = '700 96px ui-monospace, SFMono-Regular, Menlo, monospace';
-  ctx.fillText(formatTime(timeMs), W / 2, 170);
-  ctx.fillStyle = '#a0a0aa';
-  ctx.font = '500 28px -apple-system, BlinkMacSystemFont, sans-serif';
-  ctx.fillText(`${cleanCount}/${totalCount} clean`, W / 2, 200 - 8);
+  ctx.textBaseline = 'top';
+  ctx.font = `400 41px ${FONT_EXPANDED}`;
+  ctx.fillText('CAN YOU SELL IT', W / 2, 92);
+  ctx.fillText('LIKE AN MVP?', W / 2, 92 + 48);
 
-  // tiles
+  // "Run completed in X:XX.XXX" (orange)
+  ctx.fillStyle = ORANGE;
+  ctx.font = `600 46px ${FONT_GOTHIC}`;
+  ctx.fillText(`Run completed in ${formatTime(timeMs)}`, W / 2, 307);
+
+  // "Cleared X/Y!" (white, expanded)
+  ctx.fillStyle = WHITE;
+  ctx.font = `400 82px ${FONT_EXPANDED}`;
+  ctx.fillText(`Cleared ${cleanCount}/${totalCount}!`, W / 2, 386);
+
+  // Grid: pairs in 2 columns × N rows. Each pair = caricature + player.
+  const pairW = TILE * 2 + PAIR_GAP;
+  const gridW = pairW * 2 + COL_GAP;
+  const gridX = (W - gridW) / 2;
+  const gridY = 550;
+
   const imgs = await Promise.all(
     tiles.flatMap((t) => [
       loadImage(t.targetSrc),
       t.playerSrc ? loadImage(t.playerSrc) : Promise.resolve(null),
     ]),
   );
+
   for (let i = 0; i < tiles.length; i++) {
     const t = tiles[i];
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const x = cellGap + col * (cellW + cellGap);
-    const y = headerH + cellGap + row * (cellH + cellGap);
+    const pairCol = i % 2;
+    const row = Math.floor(i / 2);
+    const pairX = gridX + pairCol * (pairW + COL_GAP);
+    const pairY = gridY + row * (TILE + ROW_GAP);
+
     drawTile(
       ctx,
-      x,
-      y,
-      cellW,
-      cellH,
+      pairX,
+      pairY,
+      TILE,
       imgs[i * 2] as HTMLImageElement,
+      false,
+      false,
+    );
+    drawTile(
+      ctx,
+      pairX + TILE + PAIR_GAP,
+      pairY,
+      TILE,
       imgs[i * 2 + 1] as HTMLImageElement | null,
+      true,
       t.missed,
     );
   }
 
-  // footer
-  ctx.fillStyle = '#8a8a95';
-  ctx.font = '500 28px -apple-system, BlinkMacSystemFont, sans-serif';
+  // Footer tagline
+  ctx.fillStyle = WHITE;
+  ctx.font = `500 39px ${FONT_GOTHIC}`;
   ctx.textAlign = 'center';
-  ctx.fillText('foul-bait.com', W / 2, gridH - 30);
+  ctx.textBaseline = 'top';
+  const tagline1 = "The whistle won't blow itself. Earn it";
+  const tagline2 = `${totalCount} times. Certified MVP face by the end.`;
+  const lineH = 51;
+  ctx.fillText(tagline1, W / 2, 1701);
+  ctx.fillText(tagline2, W / 2, 1701 + lineH);
 
   return await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
@@ -94,41 +126,42 @@ function drawTile(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  w: number,
-  h: number,
-  target: HTMLImageElement,
-  player: HTMLImageElement | null,
+  size: number,
+  img: HTMLImageElement | null,
+  mirror: boolean,
   missed: boolean,
 ) {
-  const halfH = h / 2;
-  const r = 16;
-  // clip rounded
   ctx.save();
-  roundedPath(ctx, x, y, w, h, r);
+  roundedPath(ctx, x, y, size, size, TILE_RADIUS);
   ctx.clip();
-  ctx.fillStyle = '#1a1a22';
-  ctx.fillRect(x, y, w, h);
-  drawCover(ctx, target, x, y, w, halfH);
-  if (player) {
-    ctx.save();
-    ctx.translate(x + w, y + halfH);
-    ctx.scale(-1, 1);
-    drawCover(ctx, player, 0, 0, w, halfH);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = '#0a0a0c';
-    ctx.fillRect(x, y + halfH, w, halfH);
+
+  ctx.fillStyle = EMPTY_BG;
+  ctx.fillRect(x, y, size, size);
+
+  if (img) {
+    if (mirror) {
+      ctx.save();
+      ctx.translate(x + size, y);
+      ctx.scale(-1, 1);
+      drawCover(ctx, img, 0, 0, size, size);
+      ctx.restore();
+    } else {
+      drawCover(ctx, img, x, y, size, size);
+    }
   }
+
   if (missed) {
     ctx.strokeStyle = '#ff3b3b';
     ctx.lineWidth = 14;
+    const pad = 48;
     ctx.beginPath();
-    ctx.moveTo(x + 24, y + halfH + 24);
-    ctx.lineTo(x + w - 24, y + h - 24);
-    ctx.moveTo(x + w - 24, y + halfH + 24);
-    ctx.lineTo(x + 24, y + h - 24);
+    ctx.moveTo(x + pad, y + pad);
+    ctx.lineTo(x + size - pad, y + size - pad);
+    ctx.moveTo(x + size - pad, y + pad);
+    ctx.lineTo(x + pad, y + size - pad);
     ctx.stroke();
   }
+
   ctx.restore();
 }
 

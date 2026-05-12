@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFaceLandmarker } from '../face/useFaceLandmarker';
 import { PLACEHOLDER_CARICATURES, type Caricature } from '../game/caricatures';
 import { blendshapesToMap, scoreMatch, updateHold, type HoldState } from '../game/matcher';
@@ -26,7 +26,6 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
   const [score, setScore] = useState(0);
   const [locked, setLocked] = useState(false);
   const [liveMap, setLiveMap] = useState<Record<string, number>>({});
-  const [face, setFace] = useState<{ x: number; y: number } | null>(null);
   const [hint, setHint] = useState<string | null>(null);
 
   const holdRef = useRef<HoldState>({ aboveSince: null, locked: false });
@@ -141,28 +140,8 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
     [c, threshold, holdMs, locked, advance, runStart],
   );
 
-  const onLandmarks = useCallback((points: { x: number; y: number }[]) => {
-    if (!points.length) return;
-    // Use ~landmark 1 (nose) as face center
-    const p = points[1] ?? points[0];
-    setFace({ x: p.x, y: p.y });
-  }, []);
-
-  const { status, error, fps, landmarks } = useFaceLandmarker(videoRef, { onFrame, onLandmarks });
+  const { status, error, fps, landmarks } = useFaceLandmarker(videoRef, { onFrame });
   void landmarks;
-
-  // Choose target-badge corner: opposite quadrant of detected face (mirrored).
-  const badgeCorner = useMemo<'tl' | 'tr' | 'bl' | 'br'>(() => {
-    if (!face) return 'tl';
-    // video is mirrored horizontally on screen, so mirror x for badge layout.
-    const xv = 1 - face.x;
-    const right = xv < 0.5;
-    const bottom = face.y < 0.5;
-    if (right && bottom) return 'br';
-    if (right && !bottom) return 'tr';
-    if (!right && bottom) return 'bl';
-    return 'tl';
-  }, [face]);
 
   const elapsedRound = runStart == null ? 0 : now - roundStartRef.current;
   const ringPct = Math.max(0, Math.min(1, 1 - elapsedRound / capMs));
@@ -213,7 +192,7 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
         <div className="round-timer">{formatTime(totalElapsed)}</div>
       </div>
 
-      <div className={`round-badge round-badge--${badgeCorner} ${locked ? 'round-badge--burst' : ''}`}>
+      <div className={`round-badge round-badge--tl ${locked ? 'round-badge--burst' : ''}`}>
         <div
           className="round-badge-ring"
           style={{
@@ -263,7 +242,7 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
 
 function DebugLandmarks({ points }: { points: { x: number; y: number }[] }) {
   return (
-    <svg className="round-landmarks" viewBox="0 0 1 1" preserveAspectRatio="none">
+    <svg className="round-landmarks" viewBox="0 0 1 1" preserveAspectRatio="xMidYMid slice">
       {points.map((p, i) => (
         <circle key={i} cx={1 - p.x} cy={p.y} r={0.0025} fill="#06d6a0" />
       ))}

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:ios": "HTTPS=1 vite --port 5443 --strictPort",
+    "dev:ios": "HTTPS=1 vite --port 5443",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"

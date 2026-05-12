@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PLACEHOLDER_CARICATURES } from '../game/caricatures';
 import type { RunResult } from '../game/run';
 import { getFrame } from '../capture/whistleFrameStore';
 import { renderGrid, type GridTile } from '../capture/gridRenderer';
 import { formatTime, shareRun } from '../share/share';
-import { clutchPlay, type LeaderboardRow } from '../platform/clutchPlay';
+
+const CLUTCH_PLAY_URL = 'https://play.clutchpoints.com/?src=mvp-material';
 
 type Props = {
   result: RunResult;
@@ -30,14 +31,9 @@ export function Results({ result, onPlayAgain }: Props) {
     [result],
   );
 
-  const [board, setBoard] = useState<LeaderboardRow[] | null>(null);
-  const [you, setYou] = useState<LeaderboardRow | null>(null);
-  const [shareState, setShareState] = useState<'idle' | 'rendering' | 'shared' | 'downloaded' | 'error'>('idle');
-
-  useEffect(() => {
-    void clutchPlay.getLeaderboard().then(setBoard);
-    void clutchPlay.getYouRow(result.totalMs).then(setYou);
-  }, [result.totalMs]);
+  const [shareState, setShareState] = useState<'idle' | 'rendering' | 'shared' | 'downloaded' | 'error'>(
+    'idle',
+  );
 
   const onShare = async () => {
     setShareState('rendering');
@@ -60,71 +56,70 @@ export function Results({ result, onPlayAgain }: Props) {
     }
   };
 
-  const onClaim = () => {
-    void clutchPlay.submitScore(result.totalMs);
-    const returnUrl = `${window.location.origin}/?score=${result.totalMs}`;
-    clutchPlay.signIn(returnUrl);
-  };
-
   return (
     <div className="results">
       <div className="results-inner">
-        <div className="results-msg">Run complete</div>
-        <div className="results-time">{formatTime(result.totalMs)}</div>
-        <div className="results-clean">
-          {cleanCount}/{totalCount} clean
-        </div>
+        <p className="results-brand results-fade" style={{ animationDelay: '0ms' }}>
+          CAN YOU SELL IT
+          <br />
+          LIKE AN MVP?
+        </p>
+        <p className="results-runtime results-fade" style={{ animationDelay: '80ms' }}>
+          Run completed in {formatTime(result.totalMs)}
+        </p>
+        <h2 className="results-cleared results-fade" style={{ animationDelay: '160ms' }}>
+          Cleared {cleanCount}/{totalCount}!
+        </h2>
 
         <div className="results-grid">
-          {tiles.map((t) => (
-            <div key={t.id} className={`results-tile ${t.missed ? 'results-tile--missed' : ''}`}>
-              <div className="results-tile-target">
+          {tiles.map((t, i) => (
+            <div
+              key={t.id}
+              className={`results-pair results-fade ${t.missed ? 'results-pair--missed' : ''}`}
+              style={{ animationDelay: `${240 + i * 70}ms` }}
+            >
+              <div className="results-cell results-cell--target">
                 {t.targetSrc ? <img src={t.targetSrc} alt="" /> : null}
               </div>
-              <div className="results-tile-player">
-                {t.playerSrc ? <img src={t.playerSrc} alt="" /> : <div className="results-tile-empty" />}
-                {t.missed && <div className="results-tile-x">✕</div>}
+              <div className="results-cell results-cell--player">
+                {t.playerSrc ? <img src={t.playerSrc} alt="" /> : <div className="results-cell-empty" />}
+                {t.missed && <div className="results-cell-x" aria-hidden>✕</div>}
               </div>
             </div>
           ))}
         </div>
 
-        <div className="results-board">
-          <div className="results-board-title">Leaderboard preview</div>
-          {board?.map((r) => (
-            <div key={r.rank} className="results-board-row">
-              <span className="results-board-rank">#{r.rank}</span>
-              <span className="results-board-name">{r.name}</span>
-              <span className="results-board-time">{formatTime(r.timeMs)}</span>
-            </div>
-          ))}
-          {you && (
-            <div className="results-board-row results-board-row--you">
-              <span className="results-board-rank">#{you.rank}</span>
-              <span className="results-board-name">YOU</span>
-              <span className="results-board-time">{formatTime(you.timeMs)}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="results-cta">
-          <button onClick={onShare} disabled={shareState === 'rendering'}>
-            {shareState === 'rendering'
-              ? 'Rendering…'
-              : shareState === 'downloaded'
-              ? 'Downloaded ✓'
-              : shareState === 'shared'
-              ? 'Shared ✓'
-              : 'Share'}
-          </button>
-          <button onClick={onClaim} className="results-cta-claim">
-            Claim your spot →
-          </button>
-        </div>
-
-        <button className="results-replay" onClick={onPlayAgain}>
-          Play again
+        <button
+          className="results-btn results-btn--primary results-fade"
+          style={{ animationDelay: `${240 + tiles.length * 70 + 60}ms` }}
+          onClick={onShare}
+          disabled={shareState === 'rendering'}
+        >
+          {shareState === 'rendering'
+            ? 'Rendering…'
+            : shareState === 'downloaded'
+            ? 'Downloaded ✓'
+            : shareState === 'shared'
+            ? 'Shared ✓'
+            : 'Share'}
         </button>
+        <button
+          className="results-btn results-btn--secondary results-fade"
+          style={{ animationDelay: `${240 + tiles.length * 70 + 130}ms` }}
+          onClick={onPlayAgain}
+        >
+          Play Again
+        </button>
+
+        <p
+          className="results-more results-fade"
+          style={{ animationDelay: `${240 + tiles.length * 70 + 200}ms` }}
+        >
+          More Games at{' '}
+          <a href={CLUTCH_PLAY_URL} target="_blank" rel="noopener noreferrer">
+            Clutch Play →
+          </a>
+        </p>
       </div>
     </div>
   );
