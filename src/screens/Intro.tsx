@@ -29,17 +29,10 @@ export function Intro({ onStart, faceCount }: Props) {
 
         <div className="intro-hero-row">
           <div className="intro-hero-card">
-            <img src="/faces/Frame9.jpg" alt="" />
+            <img src="/faces/Frame 4.jpg" alt="" />
           </div>
           <div className="intro-hero-card">
-            <video
-              src="/intro-user.mp4"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="auto"
-            />
+            <img src="/faces/image-user.jpg" alt="" />
           </div>
         </div>
 
