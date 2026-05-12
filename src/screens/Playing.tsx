@@ -37,6 +37,9 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
   const c: Caricature = PLACEHOLDER_CARICATURES[index];
   const total = PLACEHOLDER_CARICATURES.length;
   const capMs = c.capMs ?? DEFAULT_CAP_MS;
+  // Per-face threshold override (caricatures can be tuned individually);
+  // falls back to the global URL-param threshold.
+  const effectiveThreshold = c.threshold ?? threshold;
 
   // Reset for each round
   useEffect(() => {
@@ -118,10 +121,10 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
       setScore(s);
       setLiveMap(live);
       const t = performance.now();
-      const updated = updateHold(holdRef.current, s, threshold, holdMs, t);
+      const updated = updateHold(holdRef.current, s, effectiveThreshold, holdMs, t);
       const justLocked = !holdRef.current.locked && updated.locked;
       holdRef.current = updated;
-      if (s >= threshold) {
+      if (s >= effectiveThreshold) {
         sinceBelowRef.current = t;
       }
       if (justLocked && !locked) {
@@ -132,7 +135,7 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
       }
       // Hint: refresh only when top gap key changes, after 3s below threshold
       const belowFor = t - sinceBelowRef.current;
-      if (s < threshold && belowFor > 3000) {
+      if (s < effectiveThreshold && belowFor > 3000) {
         const next = pickHint(c.target, live);
         if (next !== lastHintRef.current) {
           lastHintRef.current = next;
@@ -145,7 +148,7 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
         }
       }
     },
-    [c, threshold, holdMs, locked, advance, runStart],
+    [c, effectiveThreshold, holdMs, locked, advance, runStart, total],
   );
 
   const { status, error, fps, landmarks } = useFaceLandmarker(videoRef, { onFrame });
@@ -168,7 +171,7 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
   const totalElapsed = runStart == null ? 0 : now - runStart;
 
   const meterPct = Math.round(score * 100);
-  const thresholdPct = Math.round(threshold * 100);
+  const thresholdPct = Math.round(effectiveThreshold * 100);
   const ringDeg = Math.round(ringPct * 360);
   const ringColor = ringPct < 0.2 ? '#ff3b3b' : ringPct < 0.4 ? '#ffaa33' : '#06d6a0';
 
@@ -240,7 +243,7 @@ export function Playing({ threshold, holdMs, debug, onComplete }: Props) {
         </div>
         <div className="round-meter">
           <div
-            className={`round-meter-fill ${score >= threshold ? 'round-meter-fill--hot' : ''}`}
+            className={`round-meter-fill ${score >= effectiveThreshold ? 'round-meter-fill--hot' : ''}`}
             style={{ width: `${meterPct}%` }}
           />
           <div className="round-meter-threshold" style={{ left: `${thresholdPct}%` }} />

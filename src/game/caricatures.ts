@@ -38,12 +38,18 @@ function resolve(list: RawCaricature[]): Caricature[] {
   return list.map((c) => ({ ...c, target: resolveTarget(c) }));
 }
 
-export const PLACEHOLDER_CARICATURES: Caricature[] = resolve([
+// Universal play order. Anchor with the intro hero (frame-4), then sequential.
+// The threshold-reduced trio (1, 2, 3) lands at the end so players are warmed
+// up by then.
+const PLAY_ORDER = ['frame-4', 'frame-5', 'frame-6', 'frame-7', 'frame-8', 'frame-1', 'frame-2', 'frame-3'];
+
+const RAW_CARICATURES: RawCaricature[] = ([
   {
     id: 'frame-1',
     label: 'Label here',
     emoji: '😐',
     photo: '/faces/Frame 1.jpg',
+    threshold: 0.72,
     activeKeys: ["mouthLowerDownLeft","mouthLowerDownRight","browOuterUpRight","mouthStretchLeft","eyeWideRight"],
     extracted: {
       "browDownLeft": 0.004,
@@ -105,6 +111,7 @@ export const PLACEHOLDER_CARICATURES: Caricature[] = resolve([
     label: 'Label here',
     emoji: '😐',
     photo: '/faces/Frame 2.jpg',
+    threshold: 0.72,
     activeKeys: ["browInnerUp","browOuterUpRight","browOuterUpLeft","eyeLookUpRight","mouthPucker"],
     extracted: {
       "browDownLeft": 0,
@@ -166,6 +173,7 @@ export const PLACEHOLDER_CARICATURES: Caricature[] = resolve([
     label: 'Label here',
     emoji: '😐',
     photo: '/faces/Frame 3.jpg',
+    threshold: 0.72,
     activeKeys: ["mouthPucker","browOuterUpLeft","browOuterUpRight","browInnerUp","eyeLookInLeft"],
     extracted: {
       "browDownLeft": 0,
@@ -528,3 +536,12 @@ export const PLACEHOLDER_CARICATURES: Caricature[] = resolve([
     weights: {},
   },
 ]);
+
+const RAW_BY_ID = new Map(RAW_CARICATURES.map((c) => [c.id, c]));
+const ORDERED_RAW = PLAY_ORDER.map((id) => {
+  const c = RAW_BY_ID.get(id);
+  if (!c) throw new Error(`PLAY_ORDER references unknown id: ${id}`);
+  return c;
+});
+
+export const PLACEHOLDER_CARICATURES: Caricature[] = resolve(ORDERED_RAW);
