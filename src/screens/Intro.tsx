@@ -51,7 +51,7 @@ export function Intro({ onStart, faceCount }: Props) {
           Earn the whistle
         </button>
 
-        <p className="intro-tip">Tip: Turn on sound and screen recording 🤳</p>
+        <p className="intro-tip">🤳 Screen record on. Silent mode off.</p>
         <p className="intro-foot">
           Selfie Cam required. No data stored. Just for laughs. Not affiliated with or endorsed by
           any athlete or league.

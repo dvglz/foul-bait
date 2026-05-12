@@ -17,15 +17,18 @@ type SharePayload = {
 };
 
 export async function shareRun({ blob, filename, timeMs }: SharePayload): Promise<'shared' | 'downloaded'> {
+  void timeMs;
   const file = new File([blob], filename, { type: blob.type });
-  const text = shareText(timeMs);
   const nav = navigator as Navigator & {
     canShare?: (data: ShareData) => boolean;
     share?: (data: ShareData) => Promise<void>;
   };
+  // iOS quirk: sharing `files` + `text` together causes the Copy action to
+  // place BOTH on the pasteboard. Pasting then yields the image *and* a link
+  // preview card from the text — visually a duplicate. File-only avoids that.
   if (nav.share && nav.canShare?.({ files: [file] })) {
     try {
-      await nav.share({ files: [file], text, title: 'Foul Bait' });
+      await nav.share({ files: [file] });
       return 'shared';
     } catch {
       // fall through to download
