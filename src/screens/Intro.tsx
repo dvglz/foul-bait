@@ -29,7 +29,7 @@ export function Intro({ onStart, faceCount }: Props) {
 
         <div className="intro-hero-row">
           <div className="intro-hero-card">
-            <img src="/faces/Frame 4.jpg" alt="" />
+            <img src="/faces/04_2026-03-24T014524Z_1937861792_MT1USATODAY28572280_RTRMADP_3_NBA-OKLAHOMA-CITY-THUNDER-AT-PHILADELPHIA-76ERS 1.jpg" alt="" />
           </div>
           <div className="intro-hero-card">
             <img src="/faces/image-user.jpg" alt="" />
